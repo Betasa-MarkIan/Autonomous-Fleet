@@ -1,5 +1,3 @@
-//NASA PINAKABABA YUNG ROUTER PUSH LOGICS POOOO! 
-
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WebServer.h>
@@ -7,16 +5,11 @@
 #include <ESP32Servo.h>
 
 // WiFi credentials
-//const char* ssid = "HUAWEI-2.4G-PnCy"; //i'll change this when in testing phase
-//const char* password = "W4AUd8jZ";
-
-const char* ssid = "realme 11 Pro 5G"; //i'll change this when in testing phase
+const char* ssid = "realme 11 Pro 5G"; 
 const char* password = "12345678";
 
 WebServer server(80);
 Servo rudder;
-
-//I should fix the on/off logic for the button later
 
 // Relay and Button Variables
 int relayPin = 19;
@@ -48,17 +41,18 @@ long distanceA; long distanceB; long distanceC;
 #define ultraSonicEchoC 16
 
 // Distance Threshold and Rudder Angle for Steering
-const int frontThreshold = 50;
+const float frontThreshold = 0.50;
 const int rudderCenter = 90;
 const int rudderLeft = 45;
 const int rudderRight = 135;
+String rudderDirection;
 
 // Motor Control Pins
 const int motorA1_A = 22;
 const int motorA1_B = 26;
 
 // PID Motor Control Variables
-float desiredRPM = 100; // Target speed
+float desiredRPM = 100; 
 float currentRPM = 0;
 float error = 0;
 float previousError = 0;
@@ -74,7 +68,7 @@ float Kd = 0.1;
 // PWM Channel Settings
 const int pwmChannel = 0;
 const int pwmFreq = 5000;
-const int pwmResolution = 8; // 0–255
+const int pwmResolution = 8; 
 
 // Steering Flags and Timers
 bool isSteering = false;
@@ -83,14 +77,11 @@ unsigned long obstacleClearedTime = 0;
 const unsigned long rudderReturnDelay = 2000;
 unsigned long lastRudderUpdate = 0;
 const unsigned long rudderUpdateInterval = 100;
-float currentRudderAngle = rudderCenter; // For smooth steering
+float currentRudderAngle = rudderCenter; 
 
-
-// Simulated Motor RPM Reading
 float readMotorRPM() {
-  // Simulate actual RPM gradually approaching target
   static float simulatedRPM = 0;
-  simulatedRPM += (output - simulatedRPM) * 0.05; // smooth change
+  simulatedRPM += (output - simulatedRPM) * 0.05;
   return simulatedRPM;
 }
 
@@ -105,14 +96,12 @@ long getDistanceM(uint8_t trig, uint8_t echo) {
   delayMicroseconds(10);
   digitalWrite(trig, LOW);
 
-  long duration = pulseIn(echo, HIGH, 30000);  // 30ms timeout
-  if (duration == 0) return 999; // No echo
+  long duration = pulseIn(echo, HIGH, 30000);
+  if (duration == 0) return 999;
   return (duration * 0.000344) / 2.0;
 }
 
-//non Blocking pulseIn Function
 long pulseInNonBlocking(uint8_t pin, uint8_t state, unsigned long timeout) {
-  
   unsigned long start = micros();
   while (digitalRead(pin) == state) {
     if (micros() - start >= timeout) return 0;
@@ -134,14 +123,11 @@ void setup() {
   Serial.begin(115200);
   Serial.println("ESP32 Initialized");
 
-  // Relay and Button Setup
   pinMode(relayPin, OUTPUT);
   digitalWrite(relayPin, LOW);
 
-  // Buzzer Setup
   pinMode(buzzerPin, OUTPUT);
 
-  // Ultrasonic setup
   pinMode(ultraSonicTrigA, OUTPUT);
   pinMode(ultraSonicTrigB, OUTPUT);
   pinMode(ultraSonicTrigC, OUTPUT);
@@ -149,19 +135,16 @@ void setup() {
   pinMode(ultraSonicEchoB, INPUT);
   pinMode(ultraSonicEchoC, INPUT);
 
-  // Servo Setup
   randomSeed(analogRead(34));
   rudder.attach(23);
   rudder.write(rudderCenter);
 
-  // Motor Setup
   pinMode(motorA1_A, OUTPUT);
   pinMode(motorA1_B, OUTPUT);
   ledcSetup(pwmChannel, pwmFreq, pwmResolution);
   ledcAttachPin(motorA1_A, pwmChannel);
 
-  // Connect to Wi-Fi SetUp
-  WiFi.begin(ssid, password); //ssid & wifi pass
+  WiFi.begin(ssid, password);
   Serial.print("Connecting to WiFi");
   while (WiFi.status() != WL_CONNECTED && millis() - connectingStartAttempt < wifiTimeoutLimit) {
     delay(500);
@@ -170,8 +153,8 @@ void setup() {
 
   if (WiFi.status() == WL_CONNECTED) {
     Serial.println("\nConnected to WiFi");
-    Serial.print("IP address: "); //i'll put the IP address when connected to wifi
-    Serial.println(WiFi.localIP()); //local IP of wifi
+    Serial.print("IP address: ");
+    Serial.println(WiFi.localIP());
     server.begin();
     Serial.println("Web server initialized.");
   } else {
@@ -179,8 +162,6 @@ void setup() {
     Serial.println("Web server initialization failed.");
   }
 
-  // Web Server Routes
-  //Toggle Route
   server.on("/toggle", HTTP_GET, []() {
     powerOn = !powerOn;
     digitalWrite(relayPin, powerOn ? HIGH : LOW);
@@ -194,17 +175,17 @@ void setup() {
     server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
     server.send(204);
-    });
+  });
 
   server.on("/status", HTTP_GET, []() {
     server.sendHeader("Access-Control-Allow-Origin", "*");
     server.send(200, "text/plain", powerOn ? "ON" : "OFF");
   });
 }
+
 void loop() {
   server.handleClient();
 
-  // Sensor Reading and Rudder logic
   if (powerOn && millis() - lastSensorRead >= sensorInterval) {
     lastSensorRead = millis();
 
@@ -213,18 +194,7 @@ void loop() {
     distanceB = getDistanceM(ultraSonicTrigB, ultraSonicEchoB);
     delay(50);
     distanceC = getDistanceM(ultraSonicTrigC, ultraSonicEchoC);
-    
-    // Simulating Testing
-   // int x = 100; int y = 50; int z = 30; wrong placement
-   // int distanceA = x--;
-    //int distanceB = y--;
-    //int distanceC = z--;
 
-    // Displaying the Measured Distance
-    //Serial.printf("Front Distance: %d cm | Left Distance: %d cm | Right Distance: %d cm\n", distanceA, distanceB, distanceC);
-  
-
-    //steering Logic
     if (distanceA <= frontThreshold) {
       isSteering = true;
       waitingToCenter = false;
@@ -235,14 +205,18 @@ void loop() {
         int targetAngle = (distanceB > distanceC) ? rudderLeft :
                           (distanceB < distanceC) ? rudderRight :
                           (random(0, 2) == 0 ? rudderLeft : rudderRight);
-      
-      float gain = 0.3;
+
+        rudderDirection = (targetAngle == rudderLeft) ? "Turning Left..." : "Turning Right...";
+
+        float gain = 0.3;
         currentRudderAngle += (targetAngle - currentRudderAngle) * gain;
         rudder.write((int)currentRudderAngle);
         Serial.printf("Steering to: %d\n", (int)currentRudderAngle);
       }
     } else {
-      if(isSteering) {
+      rudderDirection = "Going straight...";
+
+      if (isSteering) {
         if (millis() - lastBuzzerToggle >= buzzerInterval) {
           lastBuzzerToggle = millis();
           buzzerState = !buzzerState;
@@ -276,9 +250,7 @@ void loop() {
         }
       }
     }
-  }
 
-   // PID Motor Speed Control 
     currentRPM = readMotorRPM();
     error = desiredRPM - currentRPM;
     integral += error;
@@ -287,53 +259,44 @@ void loop() {
 
     int pwmValue = constrain((int)output, 0, 255);
     ledcWrite(pwmChannel, pwmValue);
-    digitalWrite(motorA1_B, LOW); // A1 handles PWM; A2 low = forward
+    digitalWrite(motorA1_B, LOW);
     previousError = error;
 
-    // Debug
-  //Serial.printf("RPM: %.2f | PWM: %d\n", currentRPM, pwmValue);
-
-  if (!powerOn) {
-  rudder.write(rudderCenter);
-  setMotorSpeed(0);
-  } else if (isSteering) {
-    setMotorSpeed(50);
-  } else {
-    setMotorSpeed(100);
-  }
-
-  // Router POST Logic
-  static unsigned long  lastPost = 0;
-  int sendData;
-  if (millis() - lastPost > 2000) {
-    lastPost = millis();   // Send every 2 seconds
-
-    HTTPClient http;
-    http.begin("http://192.168.62.210:8000/update-sensors"); //this is server's IP -- ilagay nyo IP ng server nyo para makapag post ako ng data 
-    http.addHeader("Content-Type", "application/json");
-    String json = "{";              //distanceA == front sensor | distanceB == left sensor | distanceC ==right sensor   
-    json += "\"frontDistance\":" + String(distanceA) + ","; //change nyo na lang yung name na /frontDistnce to whatever ang name na nasa roiuter get nyo
-    json += "\"leftDistance\":" + String(distanceB) + ",";
-    json += "\"rightDistance\":" + String(distanceC) + ",";
-    json += "\"motorSpeed\":" + String(desiredRPM); + "," //motor speed to ah. Speed ng properller hindi speed ng banka
-    json += "\rudderAngle\":" + String(targetAngle); 
-    json += "}";
-
-    sendData = http.POST(json);
-
-    if (sendData > 0) {
-    String response = http.getString();
-    Serial.println("Data sent successfully");
-    Serial.println("Server response" + response);
+    if (!powerOn) {
+      rudder.write(rudderCenter);
+      setMotorSpeed(0);
+    } else if (isSteering) {
+      setMotorSpeed(50);
     } else {
-    Serial.println("Failed to send data. HTTP code: " + String(sendData));}
-    http.end();
+      setMotorSpeed(100);
+    }
+
+    static unsigned long lastPost = 0;
+    int sendData;
+    if (millis() - lastPost > 2000) {
+      lastPost = millis();
+
+      HTTPClient http;
+      http.begin("http://192.168.62.210:8000/update-sensors");
+      http.addHeader("Content-Type", "application/json");
+      String json = "{";
+      json += "\"frontDistance\":" + String(distanceA) + ",";
+      json += "\"leftDistance\":" + String(distanceB) + ",";
+      json += "\"rightDistance\":" + String(distanceC) + ",";
+      json += "\"motorSpeed\":" + String(desiredRPM) + ",";
+      json += "\"rudderDirection\":\"" + rudderDirection + "\"";
+      json += "}";
+
+      sendData = http.POST(json);
+
+      if (sendData > 0) {
+        String response = http.getString();
+        Serial.println("Data sent successfully");
+        Serial.println("Server response: " + response);
+      } else {
+        Serial.println("Failed to send data. HTTP code: " + String(sendData));
+      }
+      http.end();
+    }
   }
 }
-
-
-// on/off problem -- button toggle not being detected -- website toggle incorrect
-// distanceB and C logical error
-// Servo motor not steering
-// Propeller not running does not steady in on state
-// motor driver only works in one pin
