@@ -99,16 +99,22 @@ class ESP32MJPEGReader:
 
 
 def roboflow_crack_detection():
-    """ESP32-CAM crack detection with Roboflow API and bounding boxes visualization."""
+    """ESP32-CAM crack detection with Roboflow API and simplified measurements visualization."""
     
     # Configuration
     ESP32_CAM_URL = "http://192.168.1.15/stream"
     API_KEY = "PoT0jzGUtNb0bQOEf0Ja"
     MODEL_ENDPOINT = "https://detect.roboflow.com/underwater-crack-detection/3"
     
+    # Calibration factor: pixels per millimeter
+    # You need to adjust this based on your camera setup and distance to object
+    # Example: if you know a 10mm object appears as 50 pixels, then PIXELS_PER_MM = 5.0
+    PIXELS_PER_MM = 3.2  # Adjust this value based on your calibration
+    
     # Initialize camera reader
     reader = ESP32MJPEGReader(ESP32_CAM_URL)
     print("🚀 Starting ESP32-CAM Crack Detection System...")
+    print(f"📏 Calibration: {PIXELS_PER_MM} pixels per millimeter")
     reader.start()
 
     # Wait for camera to be ready
@@ -125,13 +131,12 @@ def roboflow_crack_detection():
         reader.stop()
         return
 
-    print("🔍 Starting crack detection... (press 'q' to quit)")
+    print("🔍 Starting crack detection with measurements... (press 'q' to quit)")
     
     # Detection variables
     last_inference = 0
     inference_interval = 2.0  # Process every 2 seconds
     latest_predictions = []   # Store latest detections for continuous display
-    frame_count = 0
 
     # Colors for different crack types (BGR format for OpenCV)
     colors = {
@@ -145,17 +150,20 @@ def roboflow_crack_detection():
     while True:
         frame = reader.get_frame()
         if frame is not None:
-            frame_count += 1
             display_frame = frame.copy()
 
-            # Draw bounding boxes from latest predictions
-            for i, pred in enumerate(latest_predictions):
+            # Draw bounding boxes from latest predictions with compact measurements
+            for pred in latest_predictions:
                 class_name = pred.get('class', 'unknown')
                 confidence = pred.get('confidence', 0)
                 x = pred.get('x', 0)
                 y = pred.get('y', 0)
                 width = pred.get('width', 0)
                 height = pred.get('height', 0)
+
+                # Convert pixel dimensions to millimeters
+                width_mm = width / PIXELS_PER_MM
+                height_mm = height / PIXELS_PER_MM
 
                 # Calculate bounding box coordinates (Roboflow uses center coordinates)
                 x1 = int(x - width / 2)
@@ -166,50 +174,40 @@ def roboflow_crack_detection():
                 # Get color for this detection
                 color = colors.get(class_name.lower(), colors['unknown'])
                 
-                # Draw bounding box with thickness based on confidence
-                thickness = 3 if confidence > 0.7 else 2
+                # Draw bounding box
+                thickness = 2
                 cv2.rectangle(display_frame, (x1, y1), (x2, y2), color, thickness)
 
-                # Draw corner markers for better visibility
-                corner_length = 15
-                cv2.line(display_frame, (x1, y1), (x1 + corner_length, y1), color, thickness + 1)
-                cv2.line(display_frame, (x1, y1), (x1, y1 + corner_length), color, thickness + 1)
-                cv2.line(display_frame, (x2, y1), (x2 - corner_length, y1), color, thickness + 1)
-                cv2.line(display_frame, (x2, y1), (x2, y1 + corner_length), color, thickness + 1)
-                cv2.line(display_frame, (x1, y2), (x1 + corner_length, y2), color, thickness + 1)
-                cv2.line(display_frame, (x1, y2), (x1, y2 - corner_length), color, thickness + 1)
-                cv2.line(display_frame, (x2, y2), (x2 - corner_length, y2), color, thickness + 1)
-                cv2.line(display_frame, (x2, y2), (x2, y2 - corner_length), color, thickness + 1)
-
-                # Create label with class name and confidence
-                label = f"{class_name.upper()}: {confidence:.2f}"
-                label_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)[0]
+                # Create compact label with class name, confidence and measurements
+                label = f"{class_name.upper()}: {confidence:.2f} | {width_mm:.1f}x{height_mm:.1f}mm"
+                
+                # Font settings
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                font_scale = 0.5
+                font_thickness = 1
+                
+                # Get text size
+                label_size = cv2.getTextSize(label, font, font_scale, font_thickness)[0]
+                
+                # Calculate label background position
+                bg_x1 = x1
+                bg_y1 = y1 - label_size[1] - 10
+                bg_x2 = x1 + label_size[0] + 10
+                bg_y2 = y1 - 2
+                
+                # Ensure background doesn't go off-screen
+                if bg_y1 < 0:
+                    bg_y1 = y2 + 2
+                    bg_y2 = bg_y1 + label_size[1] + 8
                 
                 # Draw label background
-                cv2.rectangle(display_frame, (x1, y1 - label_size[1] - 15), 
-                             (x1 + label_size[0] + 10, y1 - 5), color, -1)
-                cv2.rectangle(display_frame, (x1, y1 - label_size[1] - 15), 
-                             (x1 + label_size[0] + 10, y1 - 5), (255, 255, 255), 1)
+                cv2.rectangle(display_frame, (bg_x1, bg_y1), (bg_x2, bg_y2), color, -1)
+                cv2.rectangle(display_frame, (bg_x1, bg_y1), (bg_x2, bg_y2), (255, 255, 255), 1)
 
                 # Draw label text
-                cv2.putText(display_frame, label, (x1 + 5, y1 - 10),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-
-                # Draw center point with ID number
-                cv2.circle(display_frame, (int(x), int(y)), 4, color, -1)
-                cv2.circle(display_frame, (int(x), int(y)), 6, (255, 255, 255), 1)
-                cv2.putText(display_frame, f"#{i+1}", (int(x) + 8, int(y) + 5),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-
-            # Draw status information
-            status_bg = np.zeros((80, 400, 3), dtype=np.uint8)
-            cv2.putText(status_bg, f"Frame: {frame_count}", (10, 25),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-            cv2.putText(status_bg, f"Detections: {len(latest_predictions)}", (10, 50),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0) if latest_predictions else (255, 255, 255), 2)
-            
-            # Overlay status on main frame
-            display_frame[10:90, 10:410] = cv2.addWeighted(display_frame[10:90, 10:410], 0.3, status_bg, 0.7, 0)
+                text_y = bg_y1 + label_size[1] + 3
+                cv2.putText(display_frame, label, (bg_x1 + 5, text_y),
+                           font, font_scale, (255, 255, 255), font_thickness)
 
             # Display the frame
             cv2.imshow("ESP32-CAM Crack Detection", display_frame)
@@ -235,7 +233,7 @@ def roboflow_crack_detection():
                         "overlap": 0.30      # Non-maximum suppression threshold
                     }
 
-                    print(f"🔄 Analyzing frame {frame_count} for cracks...")
+                    print(f"🔄 Analyzing frame for cracks...")
 
                     # Send request to Roboflow API
                     response = requests.post(
@@ -255,13 +253,14 @@ def roboflow_crack_detection():
                             for i, pred in enumerate(latest_predictions):
                                 class_name = pred.get('class', 'unknown')
                                 confidence = pred.get('confidence', 0)
-                                x, y = pred.get('x', 0), pred.get('y', 0)
-                                w, h = pred.get('width', 0), pred.get('height', 0)
-                                area = w * h
-                                print(f"   🎯 Detection #{i+1}: {class_name} ({confidence:.2f}) "
-                                      f"at ({x:.0f},{y:.0f}) size:{w:.0f}x{h:.0f} area:{area:.0f}px²")
+                                width_px = pred.get('width', 0)
+                                height_px = pred.get('height', 0)
+                                width_mm = width_px / PIXELS_PER_MM
+                                height_mm = height_px / PIXELS_PER_MM
+                                print(f"   📏 Detection #{i+1}: {class_name} ({confidence:.2f}) "
+                                      f"Size: {width_mm:.1f}mm × {height_mm:.1f}mm")
                         else:
-                            print(f"ℹ️ No cracks detected in frame {frame_count}")
+                            print(f"ℹ️ No cracks detected")
                             
                     elif response.status_code == 400:
                         print("❌ Bad request - check image format")
@@ -298,11 +297,17 @@ def roboflow_crack_detection():
 
 
 if __name__ == "__main__":
-    print("ESP32-CAM Crack Detection System")
-    print("=" * 40)
-    print("🎯 Real-time crack detection with bounding boxes")
+    print("ESP32-CAM Crack Detection System with Measurements")
+    print("=" * 50)
+    print("📏 Real-time crack detection with millimeter measurements")
     print("📹 ESP32-CAM MJPEG stream processing")
     print("🤖 Powered by Roboflow AI")
+    print()
+    print("CALIBRATION REQUIRED:")
+    print("Adjust PIXELS_PER_MM constant based on your setup:")
+    print("1. Place an object of known size in the camera view")
+    print("2. Measure its pixel dimensions on screen")
+    print("3. Calculate: PIXELS_PER_MM = pixel_width / actual_mm")
     print()
     
     try:
