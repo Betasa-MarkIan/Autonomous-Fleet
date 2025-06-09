@@ -98,185 +98,20 @@ class ESP32MJPEGReader:
             self.thread.join(timeout=5)
 
 
-def test_mjpeg_reader():
-    """Display MJPEG stream from ESP32-CAM."""
-    reader = ESP32MJPEGReader("http://192.168.1.15/stream")
-    print("🚀 Starting MJPEG reader test...")
-    reader.start()
-
-    print("⏳ Waiting for first frame...")
-    start_time = time.time()
-    while time.time() - start_time < 15:
-        frame = reader.get_frame()
-        if frame is not None:
-            print(f"✅ Got first frame! Shape: {frame.shape}")
-            break
-        time.sleep(0.1)
-    else:
-        print("❌ No frame received within 15 seconds")
-        reader.stop()
-        return
-
-    print("📺 Displaying stream. Press 'q' to quit.")
-    frame_count = 0
-    last_time = time.time()
-
-    while True:
-        frame = reader.get_frame()
-        if frame is not None:
-            now = time.time()
-            fps = 1 / (now - last_time) if now > last_time else 0
-            last_time = now
-
-            cv2.putText(frame, f"Frame: {frame_count} | FPS: {fps:.1f}", (10, 30),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-            cv2.imshow("ESP32-CAM MJPEG", frame)
-            frame_count += 1
-
-        if cv2.waitKey(30) & 0xFF == ord('q'):
-            break
-
-    reader.stop()
-    cv2.destroyAllWindows()
-
-
-def roboflow_integration():
-    """FIXED: Send frames to Roboflow for inference."""
-    reader = ESP32MJPEGReader("http://192.168.1.15/stream")
-    print("🚀 Starting ESP32-CAM + Roboflow integration...")
-    reader.start()
-
-    print("⏳ Waiting for ESP32-CAM to be ready...")
-    start_time = time.time()
-    while time.time() - start_time < 10:
-        frame = reader.get_frame()
-        if frame is not None:
-            print("✅ ESP32-CAM ready!")
-            break
-        time.sleep(0.1)
-    else:
-        print("❌ ESP32-CAM not ready")
-        reader.stop()
-        return
-
-    print("📡 Processing frames with Roboflow (press 'q' to quit)...")
-    last_inference = 0
-    interval = 2.0
-
-    # FIXED: Correct Roboflow workflow API endpoint and structure
-    api_key = "PoT0jzGUtNb0bQOEf0Ja"
-    workspace_id = "rov-crack-detection-3o91d"
-    workflow_id = "custom-workflow"
+def roboflow_crack_detection():
+    """ESP32-CAM crack detection with Roboflow API and bounding boxes visualization."""
     
-    # Try the correct workflow endpoint format
-    endpoint = f"https://api.roboflow.com/{workspace_id}/workflows/{workflow_id}/infer"
-
-    while True:
-        frame = reader.get_frame()
-        if frame is not None:
-            cv2.imshow("ESP32-CAM Live", frame)
-
-            now = time.time()
-            if now - last_inference > interval:
-                last_inference = now
-                try:
-                    # FIXED: Proper base64 encoding without data URL prefix
-                    _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-                    image_base64 = base64.b64encode(buffer).decode('utf-8')
-
-                    # FIXED: Correct workflow API payload structure
-                    payload = {
-                        "inputs": {
-                            "image": {
-                                "type": "base64",
-                                "value": image_base64
-                            }
-                        }
-                    }
-
-                    headers = {
-                        "Content-Type": "application/json"
-                    }
-
-                    # FIXED: Use query parameters for API key
-                    params = {
-                        "api_key": api_key
-                    }
-
-                    print("🔄 Sending request to Roboflow workflow...")
-                    
-                    try:
-                        resp = requests.post(
-                            endpoint,
-                            json=payload,
-                            headers=headers,
-                            params=params,
-                            timeout=30  # Increased timeout
-                        )
-                        
-                        print(f"📊 Response status: {resp.status_code}")
-                        
-                        if resp.status_code == 200:
-                            result = resp.json()
-                            print(f"✅ Roboflow workflow success!")
-                            print(f"📋 Full response: {result}")
-                            
-                            # FIXED: Better parsing of workflow outputs
-                            if 'outputs' in result:
-                                outputs = result['outputs']
-                                print(f"🔍 Outputs found: {list(outputs.keys())}")
-                                
-                                for output_key, output_value in outputs.items():
-                                    print(f"📝 Processing output: {output_key}")
-                                    
-                                    if isinstance(output_value, dict):
-                                        if 'predictions' in output_value:
-                                            predictions = output_value['predictions']
-                                            print(f"🎯 Found {len(predictions)} predictions in {output_key}")
-                                            
-                                            for i, pred in enumerate(predictions):
-                                                print(f"   Prediction {i+1}: {pred}")
-                                        else:
-                                            print(f"   {output_key} content: {output_value}")
-                                    else:
-                                        print(f"   {output_key}: {output_value}")
-                            else:
-                                print("⚠️ No 'outputs' field in response")
-                                
-                        elif resp.status_code == 422:
-                            print("❌ Validation error - check your workflow configuration")
-                            print(f"Response: {resp.text}")
-                        elif resp.status_code == 401:
-                            print("❌ Authentication error - check your API key")
-                        elif resp.status_code == 404:
-                            print("❌ Workflow not found - check workspace and workflow IDs")
-                        else:
-                            print(f"⚠️ Roboflow API error: {resp.status_code}")
-                            print(f"Response: {resp.text}")
-                            
-                    except requests.exceptions.Timeout:
-                        print("⚠️ Roboflow API timeout")
-                    except requests.exceptions.ConnectionError:
-                        print("⚠️ Roboflow API connection error")
-                    except Exception as e:
-                        print(f"⚠️ Roboflow API error: {e}")
-
-                except Exception as e:
-                    print(f"❌ Frame processing error: {e}")
-
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
-
-    reader.stop()
-    cv2.destroyAllWindows()
-
-
-def roboflow_object_detection():
-    """FIXED: Direct object detection model inference."""
-    reader = ESP32MJPEGReader("http://192.168.1.15/stream")
-    print("🚀 Starting ESP32-CAM + Roboflow Object Detection...")
+    # Configuration
+    ESP32_CAM_URL = "http://192.168.1.15/stream"
+    API_KEY = "PoT0jzGUtNb0bQOEf0Ja"
+    MODEL_ENDPOINT = "https://detect.roboflow.com/underwater-crack-detection/3"
+    
+    # Initialize camera reader
+    reader = ESP32MJPEGReader(ESP32_CAM_URL)
+    print("🚀 Starting ESP32-CAM Crack Detection System...")
     reader.start()
 
+    # Wait for camera to be ready
     print("⏳ Waiting for ESP32-CAM to be ready...")
     start_time = time.time()
     while time.time() - start_time < 10:
@@ -286,28 +121,106 @@ def roboflow_object_detection():
             break
         time.sleep(0.1)
     else:
-        print("❌ ESP32-CAM not ready")
+        print("❌ ESP32-CAM not ready within 10 seconds")
         reader.stop()
         return
 
-    print("📡 Processing frames with Roboflow Object Detection (press 'q' to quit)...")
+    print("🔍 Starting crack detection... (press 'q' to quit)")
+    
+    # Detection variables
     last_inference = 0
-    interval = 2.0
+    inference_interval = 2.0  # Process every 2 seconds
+    latest_predictions = []   # Store latest detections for continuous display
+    frame_count = 0
 
-    # FIXED: Correct object detection endpoint and parameters
-    api_key = "PoT0jzGUtNb0bQOEf0Ja"
-    model_endpoint = "https://detect.roboflow.com/underwater-crack-detection/3"
+    # Colors for different crack types (BGR format for OpenCV)
+    colors = {
+        'crack': (0, 0, 255),      # Red
+        'defect': (0, 255, 255),   # Yellow
+        'damage': (255, 0, 0),     # Blue
+        'fissure': (255, 0, 255),  # Magenta
+        'unknown': (255, 255, 255) # White
+    }
 
     while True:
         frame = reader.get_frame()
         if frame is not None:
-            cv2.imshow("ESP32-CAM Live", frame)
+            frame_count += 1
+            display_frame = frame.copy()
 
-            now = time.time()
-            if now - last_inference > interval:
-                last_inference = now
+            # Draw bounding boxes from latest predictions
+            for i, pred in enumerate(latest_predictions):
+                class_name = pred.get('class', 'unknown')
+                confidence = pred.get('confidence', 0)
+                x = pred.get('x', 0)
+                y = pred.get('y', 0)
+                width = pred.get('width', 0)
+                height = pred.get('height', 0)
+
+                # Calculate bounding box coordinates (Roboflow uses center coordinates)
+                x1 = int(x - width / 2)
+                y1 = int(y - height / 2)
+                x2 = int(x + width / 2)
+                y2 = int(y + height / 2)
+
+                # Get color for this detection
+                color = colors.get(class_name.lower(), colors['unknown'])
+                
+                # Draw bounding box with thickness based on confidence
+                thickness = 3 if confidence > 0.7 else 2
+                cv2.rectangle(display_frame, (x1, y1), (x2, y2), color, thickness)
+
+                # Draw corner markers for better visibility
+                corner_length = 15
+                cv2.line(display_frame, (x1, y1), (x1 + corner_length, y1), color, thickness + 1)
+                cv2.line(display_frame, (x1, y1), (x1, y1 + corner_length), color, thickness + 1)
+                cv2.line(display_frame, (x2, y1), (x2 - corner_length, y1), color, thickness + 1)
+                cv2.line(display_frame, (x2, y1), (x2, y1 + corner_length), color, thickness + 1)
+                cv2.line(display_frame, (x1, y2), (x1 + corner_length, y2), color, thickness + 1)
+                cv2.line(display_frame, (x1, y2), (x1, y2 - corner_length), color, thickness + 1)
+                cv2.line(display_frame, (x2, y2), (x2 - corner_length, y2), color, thickness + 1)
+                cv2.line(display_frame, (x2, y2), (x2, y2 - corner_length), color, thickness + 1)
+
+                # Create label with class name and confidence
+                label = f"{class_name.upper()}: {confidence:.2f}"
+                label_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.7, 2)[0]
+                
+                # Draw label background
+                cv2.rectangle(display_frame, (x1, y1 - label_size[1] - 15), 
+                             (x1 + label_size[0] + 10, y1 - 5), color, -1)
+                cv2.rectangle(display_frame, (x1, y1 - label_size[1] - 15), 
+                             (x1 + label_size[0] + 10, y1 - 5), (255, 255, 255), 1)
+
+                # Draw label text
+                cv2.putText(display_frame, label, (x1 + 5, y1 - 10),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+
+                # Draw center point with ID number
+                cv2.circle(display_frame, (int(x), int(y)), 4, color, -1)
+                cv2.circle(display_frame, (int(x), int(y)), 6, (255, 255, 255), 1)
+                cv2.putText(display_frame, f"#{i+1}", (int(x) + 8, int(y) + 5),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+
+            # Draw status information
+            status_bg = np.zeros((80, 400, 3), dtype=np.uint8)
+            cv2.putText(status_bg, f"Frame: {frame_count}", (10, 25),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+            cv2.putText(status_bg, f"Detections: {len(latest_predictions)}", (10, 50),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0) if latest_predictions else (255, 255, 255), 2)
+            
+            # Overlay status on main frame
+            display_frame[10:90, 10:410] = cv2.addWeighted(display_frame[10:90, 10:410], 0.3, status_bg, 0.7, 0)
+
+            # Display the frame
+            cv2.imshow("ESP32-CAM Crack Detection", display_frame)
+
+            # Perform AI inference at specified intervals
+            current_time = time.time()
+            if current_time - last_inference > inference_interval:
+                last_inference = current_time
+                
                 try:
-                    # FIXED: Encode frame properly
+                    # Encode frame to base64 for API
                     success, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
                     if not success:
                         print("❌ Failed to encode frame")
@@ -315,164 +228,88 @@ def roboflow_object_detection():
                         
                     image_base64 = base64.b64encode(buffer).decode('utf-8')
 
-                    # FIXED: Correct parameters for object detection
+                    # API parameters
                     params = {
-                        "api_key": api_key,
-                        "confidence": 0.40,
-                        "overlap": 0.30
+                        "api_key": API_KEY,
+                        "confidence": 0.40,  # Minimum confidence threshold
+                        "overlap": 0.30      # Non-maximum suppression threshold
                     }
 
-                    print("🔄 Sending request to Roboflow object detection...")
+                    print(f"🔄 Analyzing frame {frame_count} for cracks...")
 
-                    try:
-                        resp = requests.post(
-                            model_endpoint,
-                            data=image_base64,
-                            params=params,
-                            headers={"Content-Type": "application/x-www-form-urlencoded"},
-                            timeout=20
-                        )
+                    # Send request to Roboflow API
+                    response = requests.post(
+                        MODEL_ENDPOINT,
+                        data=image_base64,
+                        params=params,
+                        headers={"Content-Type": "application/x-www-form-urlencoded"},
+                        timeout=20
+                    )
+                    
+                    if response.status_code == 200:
+                        result = response.json()
+                        latest_predictions = result.get('predictions', [])
                         
-                        print(f"📊 Response status: {resp.status_code}")
-                        
-                        if resp.status_code == 200:
-                            result = resp.json()
-                            predictions = result.get('predictions', [])
-                            print(f"✅ Found {len(predictions)} crack detections")
-                            
-                            for i, pred in enumerate(predictions):
+                        if latest_predictions:
+                            print(f"✅ Found {len(latest_predictions)} crack detection(s)")
+                            for i, pred in enumerate(latest_predictions):
                                 class_name = pred.get('class', 'unknown')
                                 confidence = pred.get('confidence', 0)
-                                x = pred.get('x', 0)
-                                y = pred.get('y', 0)
-                                width = pred.get('width', 0)
-                                height = pred.get('height', 0)
-                                print(f"   Detection {i+1}: {class_name} ({confidence:.2f}) at ({x:.0f},{y:.0f}) size:{width:.0f}x{height:.0f}")
-                                
-                        elif resp.status_code == 400:
-                            print("❌ Bad request - check your image data")
-                            print(f"Response: {resp.text}")
-                        elif resp.status_code == 401:
-                            print("❌ Authentication error - check your API key")
-                        elif resp.status_code == 404:
-                            print("❌ Model not found - check your model endpoint")
+                                x, y = pred.get('x', 0), pred.get('y', 0)
+                                w, h = pred.get('width', 0), pred.get('height', 0)
+                                area = w * h
+                                print(f"   🎯 Detection #{i+1}: {class_name} ({confidence:.2f}) "
+                                      f"at ({x:.0f},{y:.0f}) size:{w:.0f}x{h:.0f} area:{area:.0f}px²")
                         else:
-                            print(f"⚠️ Object detection API error: {resp.status_code}")
-                            print(f"Response: {resp.text}")
+                            print(f"ℹ️ No cracks detected in frame {frame_count}")
                             
-                    except requests.exceptions.Timeout:
-                        print("⚠️ Object detection API timeout")
-                    except requests.exceptions.ConnectionError:
-                        print("⚠️ Object detection API connection error")
-                    except Exception as e:
-                        print(f"⚠️ Object detection API error: {e}")
-
+                    elif response.status_code == 400:
+                        print("❌ Bad request - check image format")
+                        latest_predictions = []
+                    elif response.status_code == 401:
+                        print("❌ Authentication error - check API key")
+                        latest_predictions = []
+                    elif response.status_code == 404:
+                        print("❌ Model not found - check model endpoint")
+                        latest_predictions = []
+                    else:
+                        print(f"⚠️ API error {response.status_code}: {response.text}")
+                        latest_predictions = []
+                        
+                except requests.exceptions.Timeout:
+                    print("⚠️ API request timeout")
+                    latest_predictions = []
+                except requests.exceptions.ConnectionError:
+                    print("⚠️ API connection error")
+                    latest_predictions = []
                 except Exception as e:
-                    print(f"❌ Frame processing error: {e}")
+                    print(f"❌ Error during inference: {e}")
+                    latest_predictions = []
 
+        # Check for quit command
         if cv2.waitKey(1) & 0xFF == ord('q'):
+            print("👋 Stopping crack detection system...")
             break
 
+    # Cleanup
     reader.stop()
     cv2.destroyAllWindows()
-
-
-# ADDED: Test individual components
-def test_roboflow_api():
-    """Test Roboflow API with a static image file."""
-    print("🧪 Testing Roboflow API with static image...")
-    
-    # Create a simple test image
-    test_image = np.zeros((480, 640, 3), dtype=np.uint8)
-    cv2.putText(test_image, "TEST IMAGE", (200, 240), cv2.FONT_HERSHEY_SIMPLEX, 2, (255, 255, 255), 3)
-    
-    # Test object detection
-    print("🔍 Testing object detection API...")
-    success, buffer = cv2.imencode('.jpg', test_image, [cv2.IMWRITE_JPEG_QUALITY, 80])
-    if success:
-        image_base64 = base64.b64encode(buffer).decode('utf-8')
-        
-        api_key = "PoT0jzGUtNb0bQOEf0Ja"
-        model_endpoint = "https://detect.roboflow.com/underwater-crack-detection/3"
-        
-        params = {
-            "api_key": api_key,
-            "confidence": 0.40,
-            "overlap": 0.30
-        }
-        
-        try:
-            resp = requests.post(
-                model_endpoint,
-                data=image_base64,
-                params=params,
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
-                timeout=20
-            )
-            
-            print(f"📊 Object Detection Response: {resp.status_code}")
-            if resp.status_code == 200:
-                result = resp.json()
-                print(f"✅ API working! Response: {result}")
-            else:
-                print(f"❌ API Error: {resp.text}")
-                
-        except Exception as e:
-            print(f"❌ API Test Error: {e}")
-    
-    # Test workflow
-    print("🔄 Testing workflow API...")
-    workspace_id = "rov-crack-detection-3o91d"
-    workflow_id = "custom-workflow"
-    endpoint = f"https://api.roboflow.com/{workspace_id}/workflows/{workflow_id}/infer"
-    
-    payload = {
-        "inputs": {
-            "image": {
-                "type": "base64",
-                "value": image_base64
-            }
-        }
-    }
-    
-    try:
-        resp = requests.post(
-            endpoint,
-            json=payload,
-            params={"api_key": api_key},
-            headers={"Content-Type": "application/json"},
-            timeout=30
-        )
-        
-        print(f"📊 Workflow Response: {resp.status_code}")
-        if resp.status_code == 200:
-            result = resp.json()
-            print(f"✅ Workflow working! Response: {result}")
-        else:
-            print(f"❌ Workflow Error: {resp.text}")
-            
-    except Exception as e:
-        print(f"❌ Workflow Test Error: {e}")
+    print("✅ System stopped successfully")
 
 
 if __name__ == "__main__":
-    print("ESP32-CAM MJPEG Stream Handler")
+    print("ESP32-CAM Crack Detection System")
     print("=" * 40)
-    print("1. Test MJPEG reader only")
-    print("2. Test with Roboflow Custom Workflow")
-    print("3. Test with Roboflow Object Detection Model")
-    print("4. Test Roboflow API (without camera)")
-
-    choice = input("\nEnter choice (1, 2, 3, or 4): ").strip()
-    if choice == "1":
-        test_mjpeg_reader()
-    elif choice == "2":
-        roboflow_integration()
-    elif choice == "3":
-        roboflow_object_detection()
-    elif choice == "4":
-        test_roboflow_api()
-    else:
-        print("Invalid choice. Running MJPEG reader test by default...")
-        test_mjpeg_reader()
+    print("🎯 Real-time crack detection with bounding boxes")
+    print("📹 ESP32-CAM MJPEG stream processing")
+    print("🤖 Powered by Roboflow AI")
+    print()
+    
+    try:
+        roboflow_crack_detection()
+    except KeyboardInterrupt:
+        print("\n⚠️ System interrupted by user")
+    except Exception as e:
+        print(f"\n❌ System error: {e}")
+    
     print("Done.")
