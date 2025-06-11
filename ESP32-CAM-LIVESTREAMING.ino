@@ -2,6 +2,8 @@
   Rui Santos
   Complete project details at https://RandomNerdTutorials.com/esp32-cam-video-streaming-web-server-camera-home-assistant/
   
+  Modified to automatically turn on flash when camera starts
+  
   IMPORTANT!!! 
    - Select Board "AI Thinker ESP32-CAM"
    - GPIO 0 must be connected to GND to upload a sketch
@@ -25,10 +27,13 @@
 #include "esp_http_server.h"
 
 //Replace with your network credentials
-const char* ssid = "ENTER_YOU_WIFI_NAME";
-const char* password = "ENTER_WIFI_PASSWORD";
+const char* ssid = "ZTE_2.4G_TZXWJ9";
+const char* password = "Joshu@1216";
 
 #define PART_BOUNDARY "123456789000000000000987654321"
+
+// Flash LED GPIO (GPIO 4 for AI Thinker ESP32-CAM)
+#define FLASH_LED_PIN 4
 
 // This project was tested with the AI Thinker Model, M5STACK PSRAM Model and M5STACK WITHOUT PSRAM
 #define CAMERA_MODEL_AI_THINKER
@@ -205,6 +210,11 @@ void setup() {
   Serial.begin(115200);
   Serial.setDebugOutput(false);
   
+  // Initialize and turn on flash LED
+  pinMode(FLASH_LED_PIN, OUTPUT);
+  digitalWrite(FLASH_LED_PIN, HIGH); // Turn flash ON at startup
+  Serial.println("Flash LED turned ON");
+  
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer = LEDC_TIMER_0;
@@ -228,7 +238,7 @@ void setup() {
   config.pixel_format = PIXFORMAT_JPEG; 
   
   if(psramFound()){
-    config.frame_size = FRAMESIZE_HVGA;
+    config.frame_size = FRAMESIZE_VGA;
     config.jpeg_quality = 10;
     config.fb_count = 2;
   } else {
