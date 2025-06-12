@@ -30,8 +30,7 @@
 
 You can view all related project files and documentation via the link below:
 
-🔗 [WEEK 2 Documentations](https://drive.google.com/drive/folders/1dgTpfdj-NUdEd3bDvpuwA6oFqEC6x7LI?usp=sharing)
-🔗 [WEEK 3 Documentations](https://drive.google.com/drive/folders/1L5WJNfwTS7BJ2LZndVRRExUvhwbvs1as?usp=sharing)
+🔗 [Overall Documentations](https://drive.google.com/drive/folders/1dgTpfdj-NUdEd3bDvpuwA6oFqEC6x7LI?usp=sharing)
 
 ---
 
